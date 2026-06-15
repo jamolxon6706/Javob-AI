@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─── Python (api + worker) ─────────────────────────────────────────────────
+  python:
+    name: Python lint, typecheck & test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [api, worker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies (${{ matrix.package }})
+        working-directory: apps/${{ matrix.package }}
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Ruff lint
+        working-directory: apps/${{ matrix.package }}
+        run: ruff check src/ tests/
+
+      - name: Mypy typecheck
+        working-directory: apps/${{ matrix.package }}
+        run: mypy src/
+
+      - name: Pytest
+        working-directory: apps/${{ matrix.package }}
+        run: pytest
+
+  # ─── TypeScript (web + packages) ──────────────────────────────────────────
+  typescript:
+    name: TS typecheck & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "11"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Typecheck (shared-types)
+        working-directory: packages/shared-types
+        run: pnpm typecheck
+
+      - name: Typecheck (web)
+        working-directory: apps/web
+        run: pnpm typecheck
+
+      - name: Test (web)
+        working-directory: apps/web
+        run: pnpm test
