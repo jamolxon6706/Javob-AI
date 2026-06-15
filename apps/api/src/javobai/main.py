@@ -10,6 +10,7 @@ from javobai.auth.router import router as auth_router
 from javobai.channels.router import router as channels_router
 from javobai.config import settings
 from javobai.faqs.router import router as faqs_router
+from javobai.internal.router import router as internal_router
 from javobai.tenants.router import router as tenants_router
 from javobai.webhooks.telegram import router as telegram_webhook_router
 
@@ -42,6 +43,8 @@ app.include_router(tenants_router)
 app.include_router(faqs_router)
 app.include_router(channels_router)
 app.include_router(telegram_webhook_router)
+if settings.environment != "production":
+    app.include_router(internal_router)
 
 
 @app.get("/health")

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,6 +49,11 @@ def _to_out(faq: FAQ) -> FAQOut:
     )
 
 
+async def _enqueue_embed(request: Request, faq_id: str) -> None:
+    """Fire-and-forget: ask the worker to compute this FAQ's embedding."""
+    await request.app.state.arq.enqueue_job("embed_faq_job", faq_id)
+
+
 @router.get("", response_model=list[FAQOut])
 async def list_faqs(
     tenant: CurrentTenant,
@@ -63,6 +68,7 @@ async def list_faqs(
 @router.post("", response_model=FAQOut, status_code=status.HTTP_201_CREATED)
 async def create_faq(
     body: FAQIn,
+    request: Request,
     tenant: CurrentTenant,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FAQOut:
@@ -75,6 +81,7 @@ async def create_faq(
     )
     db.add(faq)
     await db.flush()
+    await _enqueue_embed(request, faq.id)
     return _to_out(faq)
 
 
@@ -97,6 +104,7 @@ async def get_faq(
 async def update_faq(
     faq_id: str,
     body: FAQUpdate,
+    request: Request,
     tenant: CurrentTenant,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FAQOut:
@@ -110,6 +118,11 @@ async def update_faq(
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(faq, field, value)
     await db.flush()
+
+    # Re-embed if question or answer changed
+    if body.question is not None or body.answer is not None:
+        await _enqueue_embed(request, faq.id)
+
     return _to_out(faq)
 
 
