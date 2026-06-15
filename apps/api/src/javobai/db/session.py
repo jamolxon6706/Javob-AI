@@ -4,11 +4,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from javobai.config import settings
 
+_is_sqlite = settings.database_url.startswith("sqlite")
+
 engine = create_async_engine(
     settings.database_url,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    pool_pre_ping=not _is_sqlite,
+    **({} if _is_sqlite else {"pool_size": 10, "max_overflow": 20}),
 )
 
 AsyncSessionLocal = async_sessionmaker(

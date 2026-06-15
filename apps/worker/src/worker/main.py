@@ -1,25 +1,20 @@
-"""ARQ worker entry point. Add job functions here as the project grows."""
+"""ARQ worker entry point."""
 import logging
 
-from arq import cron
 from arq.connections import RedisSettings
 
-from .settings import worker_settings
+from worker.settings import worker_settings
+from worker.tasks.inbound import process_inbound_message
 
 logger = logging.getLogger(__name__)
 
 
-async def process_inbound_message(ctx: dict, payload: dict) -> None:  # type: ignore[type-arg]
-    """Placeholder: normalize and route an inbound platform message."""
-    logger.info("process_inbound_message received: %s", payload.get("platform"))
-
-
 async def startup(ctx: dict) -> None:  # type: ignore[type-arg]
-    logger.info("Worker started")
+    logger.info("JavobAI worker started")
 
 
 async def shutdown(ctx: dict) -> None:  # type: ignore[type-arg]
-    logger.info("Worker shutting down")
+    logger.info("JavobAI worker shutting down")
 
 
 class WorkerConfig:
