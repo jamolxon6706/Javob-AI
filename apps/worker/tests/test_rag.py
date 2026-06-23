@@ -13,11 +13,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
 import pytest
-import pytest_asyncio
 
 from worker.engine.core import CoreEngine, _HANDOFF_REPLY_UZ
 from worker.engine.unified import UnifiedMessage
 from worker.services.embeddings import EmbeddingService
+from worker.services.llm import LLMService
 from worker.services.rag import HIGH_THRESHOLD, LOW_THRESHOLD, RAGMatch, RAGService
 
 from .conftest import POSTGRES_AVAILABLE
@@ -52,6 +52,12 @@ def _mock_rag(matches: list[RAGMatch]) -> RAGService:
     return rag
 
 
+def _mock_llm(answer: str | None = "LLM grounded answer") -> LLMService:
+    llm = MagicMock(spec=LLMService)
+    llm.answer_grounded = AsyncMock(return_value=answer)
+    return llm
+
+
 def _faq_match(score: float) -> RAGMatch:
     return RAGMatch(
         faq_id="faq-1",
@@ -67,42 +73,63 @@ def _faq_match(score: float) -> RAGMatch:
 
 @pytest.mark.asyncio
 async def test_core_engine_high_score_returns_faq_answer() -> None:
-    """score >= HIGH_THRESHOLD → direct FAQ answer (FREE PATH)."""
-    engine = CoreEngine(_mock_embedding(), _mock_rag([_faq_match(0.92)]))
+    """score >= HIGH_THRESHOLD → direct FAQ answer (FREE PATH, no LLM call)."""
+    llm = _mock_llm()
+    engine = CoreEngine(_mock_embedding(), _mock_rag([_faq_match(0.92)]), llm)
     reply = await engine.process(_make_msg(), conn=object())
-    assert reply == "Bepul tarifimiz bor."
+    assert reply.text == "Bepul tarifimiz bor."
+    assert reply.source == "faq"
+    assert reply.rag_score == pytest.approx(0.92)
+    llm.answer_grounded.assert_not_called()  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
-async def test_core_engine_mid_score_returns_faq_answer() -> None:
-    """LOW_THRESHOLD <= score < HIGH_THRESHOLD → grounded answer (LLM in Phase 4)."""
-    engine = CoreEngine(_mock_embedding(), _mock_rag([_faq_match(0.72)]))
+async def test_core_engine_mid_score_returns_llm_answer() -> None:
+    """LOW_THRESHOLD <= score < HIGH_THRESHOLD → LLM-grounded answer."""
+    llm = _mock_llm(answer="LLM grounded answer")
+    engine = CoreEngine(_mock_embedding(), _mock_rag([_faq_match(0.72)]), llm)
     reply = await engine.process(_make_msg(), conn=object())
-    assert reply == "Bepul tarifimiz bor."
+    assert reply.text == "LLM grounded answer"
+    assert reply.source == "llm"
+    assert reply.rag_score == pytest.approx(0.72)
+    llm.answer_grounded.assert_awaited_once()  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_core_engine_mid_score_llm_guardrail_returns_handoff() -> None:
+    """LLM returns None (NEED_HUMAN guardrail or all providers failed) → handoff."""
+    engine = CoreEngine(_mock_embedding(), _mock_rag([_faq_match(0.72)]), _mock_llm(answer=None))
+    reply = await engine.process(_make_msg(), conn=object())
+    assert reply.text == _HANDOFF_REPLY_UZ
+    assert reply.source == "handoff"
 
 
 @pytest.mark.asyncio
 async def test_core_engine_low_score_returns_handoff() -> None:
     """score < LOW_THRESHOLD → human handoff message."""
-    engine = CoreEngine(_mock_embedding(), _mock_rag([_faq_match(0.50)]))
+    engine = CoreEngine(_mock_embedding(), _mock_rag([_faq_match(0.50)]), _mock_llm())
     reply = await engine.process(_make_msg(), conn=object())
-    assert reply == _HANDOFF_REPLY_UZ
+    assert reply.text == _HANDOFF_REPLY_UZ
+    assert reply.source == "handoff"
 
 
 @pytest.mark.asyncio
 async def test_core_engine_no_matches_returns_handoff() -> None:
     """No FAQ matches at all → handoff."""
-    engine = CoreEngine(_mock_embedding(), _mock_rag([]))
+    engine = CoreEngine(_mock_embedding(), _mock_rag([]), _mock_llm())
     reply = await engine.process(_make_msg(), conn=object())
-    assert reply == _HANDOFF_REPLY_UZ
+    assert reply.text == _HANDOFF_REPLY_UZ
+    assert reply.source == "handoff"
+    assert reply.rag_score is None
 
 
 @pytest.mark.asyncio
 async def test_core_engine_empty_text_returns_empty() -> None:
     """Empty/whitespace message → skip silently."""
-    engine = CoreEngine(_mock_embedding(), _mock_rag([]))
+    engine = CoreEngine(_mock_embedding(), _mock_rag([]), _mock_llm())
     reply = await engine.process(_make_msg(text="   "), conn=object())
-    assert reply == ""
+    assert reply.text == ""
+    assert reply.source is None
 
 
 def test_high_threshold_above_low() -> None:

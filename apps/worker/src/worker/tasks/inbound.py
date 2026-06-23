@@ -5,6 +5,15 @@ from worker.crypto import decrypt_dict
 from worker.engine.core import CoreEngine
 from worker.engine.normalizer import normalize_telegram
 from worker.engine.unified import UnifiedMessage
+from worker.services.conversation import (
+    extend_window,
+    get_or_create_contact,
+    get_or_create_conversation,
+    is_bot_active,
+    save_message,
+)
+from worker.services.dispatcher import OutboundDispatcher
+from worker.settings import worker_settings
 
 logger = logging.getLogger(__name__)
 
@@ -12,8 +21,7 @@ logger = logging.getLogger(__name__)
 async def process_inbound_message(ctx: dict, payload: dict) -> None:  # type: ignore[type-arg]
     """
     Normalize an inbound platform message and route through the CoreEngine.
-    Phase 3: RAG → FAQ answer or handoff reply.
-    Phase 4+: LLM grounding, agentic actions.
+    Phase 3/4: RAG + LLM grounding. Phase 5: persistence, 24h window, handoff, dispatch.
     """
     platform: str = payload.get("platform", "")
 
@@ -36,7 +44,7 @@ def _handle_telegram(payload: dict) -> UnifiedMessage | None:  # type: ignore[ty
     )
 
 
-async def _process(ctx: dict, msg: UnifiedMessage) -> None:
+async def _process(ctx: dict, msg: UnifiedMessage) -> None:  # type: ignore[type-arg]
     if not msg.chat_id or not msg.credentials_encrypted:
         return
 
@@ -48,11 +56,47 @@ async def _process(ctx: dict, msg: UnifiedMessage) -> None:
         return
 
     engine: CoreEngine = ctx["core_engine"]
+    dispatcher: OutboundDispatcher = ctx["dispatcher"]
     pool = ctx["db_pool"]
 
     async with pool.acquire() as conn:
+        contact_id = await get_or_create_contact(
+            conn, msg.tenant_id, msg.platform, msg.external_user_id
+        )
+        conversation = await get_or_create_conversation(
+            conn, msg.tenant_id, msg.channel_id, contact_id
+        )
+
+        await save_message(
+            conn,
+            conversation_id=conversation.id,
+            tenant_id=msg.tenant_id,
+            direction="inbound",
+            content=msg.text,
+            platform_msg_id=msg.platform_msg_id,
+        )
+        await extend_window(conn, conversation.id, hours=worker_settings.message_window_hours)
+
+        if not is_bot_active(conversation):
+            logger.info(
+                "tenant=%s conversation=%s status=%s — operator handling, bot skipped",
+                msg.tenant_id,
+                conversation.id,
+                conversation.status,
+            )
+            return
+
         reply = await engine.process(msg, conn)
 
-    if reply:
-        await send_message(bot_token, msg.chat_id, reply)
-        logger.info("Replied to chat %s on channel %s", msg.chat_id, msg.channel_id)
+        async def _send(text: str) -> None:
+            await send_message(bot_token, msg.chat_id, text)  # type: ignore[arg-type]
+
+        sent = await dispatcher.send(conn, msg, reply, conversation, _send)
+
+    if sent:
+        logger.info(
+            "Replied to chat %s on channel %s (source=%s)",
+            msg.chat_id,
+            msg.channel_id,
+            reply.source,
+        )

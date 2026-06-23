@@ -29,3 +29,4 @@ class UnifiedMessage(BaseModel):
     # Routing helpers (not part of the contract, stripped before storage)
     credentials_encrypted: str | None = None
     chat_id: str | None = None
+    platform_msg_id: str | None = None

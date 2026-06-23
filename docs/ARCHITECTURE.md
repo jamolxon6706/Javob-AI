@@ -101,11 +101,11 @@ class UnifiedMessage(BaseModel):
 ## Phase Progress
 
 - [x] Phase 0 — Repo skeleton & infra
-- [ ] Phase 1 — Backend core: DB, migration, auth, tenant
-- [ ] Phase 2 — Telegram adapter + webhook ingestion + queue
-- [ ] Phase 3 — RAG core (local embeddings)
-- [ ] Phase 4 — LLM fallback + model router + guardrails
-- [ ] Phase 5 — Outbound dispatcher, 24h window, rate-limit, handoff
+- [x] Phase 1 — Backend core: DB, migration, auth, tenant
+- [x] Phase 2 — Telegram adapter + webhook ingestion + queue
+- [x] Phase 3 — RAG core (local embeddings)
+- [x] Phase 4 — LLM fallback + model router + guardrails
+- [x] Phase 5 — Outbound dispatcher, 24h window, rate-limit, handoff
 - [ ] Phase 6 — Dashboard foundation (Next.js, auth, i18n)
 - [ ] Phase 7 — Dashboard modules
 - [ ] Phase 8 — Inbox (operator panel) + copilot + realtime

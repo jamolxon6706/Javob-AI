@@ -33,6 +33,7 @@ def test_normalize_text_message() -> None:
     assert msg.external_user_id == "12345"
     assert msg.chat_id == "12345"
     assert msg.conversation_id == "tg:channel-1:12345"
+    assert msg.platform_msg_id == "42"
     assert msg.lang_hint == "uz"
     assert msg.kind == "dm"
     assert msg.media == []

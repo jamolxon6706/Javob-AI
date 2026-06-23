@@ -76,4 +76,5 @@ def normalize_telegram(
         received_at=datetime.fromtimestamp(date, tz=timezone.utc),
         credentials_encrypted=credentials_encrypted,
         chat_id=chat_id,
+        platform_msg_id=message_id,
     )
