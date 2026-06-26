@@ -1,12 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from javobai.auth import service
+from javobai.auth.cookies import clear_auth_cookies, set_auth_cookies
 from javobai.auth.deps import CurrentUser
+from javobai.config import settings
 from javobai.db.session import get_db
 from javobai.redis import get_redis
 
@@ -63,6 +65,7 @@ async def request_otp(
 @router.post("/verify", response_model=TokenOut)
 async def verify(
     body: VerifyOTPIn,
+    response: Response,
     redis: Annotated[Redis, Depends(get_redis)],  # type: ignore[type-arg]
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TokenOut:
@@ -72,12 +75,15 @@ async def verify(
 
     user = await service.get_or_create_user(body.phone, db)
     access, refresh = await service.issue_tokens(user, redis)
+    # Phase 6: also stash HttpOnly cookies so the dashboard BFF can forward them.
+    set_auth_cookies(response, access=access, refresh=refresh, settings=settings)
     return TokenOut(access_token=access, refresh_token=refresh)
 
 
 @router.post("/refresh", response_model=TokenOut)
 async def refresh(
     body: RefreshIn,
+    response: Response,
     redis: Annotated[Redis, Depends(get_redis)],  # type: ignore[type-arg]
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TokenOut:
@@ -85,7 +91,25 @@ async def refresh(
         access, new_refresh = await service.refresh_access_token(body.refresh_token, redis, db)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    set_auth_cookies(response, access=access, refresh=new_refresh, settings=settings)
     return TokenOut(access_token=access, refresh_token=new_refresh)
+
+
+class LogoutIn(BaseModel):
+    refresh_token: str
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    body: LogoutIn,
+    response: Response,
+    redis: Annotated[Redis, Depends(get_redis)],  # type: ignore[type-arg]
+) -> Response:
+    """Revoke the refresh token server-side and clear both cookies on the browser."""
+    await service.revoke_refresh_token(body.refresh_token, redis)
+    clear_auth_cookies(response, settings=settings)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
 
 
 @router.get("/me", response_model=MeOut)

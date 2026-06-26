@@ -114,6 +114,24 @@ async def refresh_access_token(
     return await issue_tokens(user, redis)
 
 
+async def revoke_refresh_token(refresh_token: str, redis: Redis) -> bool:  # type: ignore[type-arg]
+    """
+    Best-effort revocation: delete the refresh:{token} Redis key so the token
+    cannot be used to mint new access tokens. Returns True if a key was removed.
+    Safe to call with garbage input — JWT decode errors are logged and ignored.
+    """
+    try:
+        payload = decode_token(refresh_token)
+    except ValueError:
+        logger.info("revoke_refresh_token: token failed to decode; nothing to revoke")
+        return False
+    if payload.get("type") != "refresh":
+        logger.info("revoke_refresh_token: not a refresh token; nothing to revoke")
+        return False
+    removed = await redis.delete(_refresh_key(refresh_token))
+    return bool(removed)
+
+
 async def get_or_create_user(phone: str, db: AsyncSession) -> User:
     """Return existing user for phone, or create a tenant+user pair."""
     result = await db.execute(select(User).where(User.phone == phone, User.is_active == True))  # noqa: E712

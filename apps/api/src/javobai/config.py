@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     jwt_refresh_expire_days: int = 30
     otp_ttl_seconds: int = 300
 
+    # Auth cookies (Phase 6 — httpOnly transport to the dashboard).
+    # COOKIE_SECURE=false in local dev (HTTP), true in prod.
+    cookie_secure: bool = False
+    # Empty in dev; ".javobai.uz" in prod so the cookie crosses app./api. subdomains.
+    cookie_domain: str = ""
+    cookie_samesite: str = "lax"
+
     # Encryption
     fernet_key: str = "change_me"
 
