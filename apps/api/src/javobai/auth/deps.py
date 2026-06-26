@@ -2,14 +2,12 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from javobai.auth.service import decode_token
 from javobai.db.models import Tenant, User
 from javobai.db.session import get_db
-from javobai.redis import get_redis
 
 bearer = HTTPBearer()
 
@@ -22,7 +20,7 @@ async def get_current_user(
     try:
         payload = decode_token(token)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from None
 
     if payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not an access token")

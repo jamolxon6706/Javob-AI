@@ -33,7 +33,7 @@ class VerifyOTPIn(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105
 
 
 class RefreshIn(BaseModel):
@@ -71,7 +71,10 @@ async def verify(
 ) -> TokenOut:
     valid = await service.verify_otp(body.phone, body.otp, redis)
     if not valid:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired OTP"
+        )
 
     user = await service.get_or_create_user(body.phone, db)
     access, refresh = await service.issue_tokens(user, redis)
