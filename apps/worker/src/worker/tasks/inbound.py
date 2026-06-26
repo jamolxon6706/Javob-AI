@@ -91,12 +91,10 @@ async def _process(ctx: dict, msg: UnifiedMessage) -> None:  # type: ignore[type
         async def _send(text: str) -> None:
             await send_message(bot_token, msg.chat_id, text)  # type: ignore[arg-type]
 
-        sent = await dispatcher.send(conn, msg, reply, conversation, _send)
+        result = await dispatcher.send(conn, msg, reply, conversation, _send)
 
-    if sent:
-        logger.info(
-            "Replied to chat %s on channel %s (source=%s)",
-            msg.chat_id,
-            msg.channel_id,
-            reply.source,
-        )
+    logger.info(
+        "tenant=%s channel=%s conv=%s source=%s reason=%s handoff=%s",
+        msg.tenant_id, msg.channel_id, conversation.id, reply.source,
+        result.reason, result.handoff,
+    )

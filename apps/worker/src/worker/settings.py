@@ -18,6 +18,18 @@ class WorkerSettings(BaseSettings):
     message_window_hours: int = 24
     outbound_rate_limit_per_second: int = 20
 
+    # Phase 5 — per-conversation anti-runaway guard. A single customer must not
+    # be auto-replied to more than this many times per minute.
+    outbound_rate_limit_per_conversation_per_minute: int = 3
+
+    # Phase 5 — Redis DLQ for sends that fail after the adapter's retry budget.
+    dlq_outbound_key: str = "dlq:outbound"
+    dlq_max_entries: int = 1000
+
+    # Phase 5 — Redis pub/sub channel pattern for operator events.
+    # Per-tenant handoff events go to: f"handoff:{tenant_id}"
+    handoff_event_channel_prefix: str = "handoff"
+
     @property
     def asyncpg_url(self) -> str:
         """Plain asyncpg DSN (strips SQLAlchemy dialect prefix if present)."""

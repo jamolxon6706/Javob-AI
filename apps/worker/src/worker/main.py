@@ -53,7 +53,12 @@ async def startup(ctx: dict) -> None:  # type: ignore[type-arg]
     rate_limit_redis = redis_asyncio.from_url(worker_settings.redis_url)  # type: ignore[no-untyped-call]
     ctx["rate_limit_redis"] = rate_limit_redis
     ctx["dispatcher"] = OutboundDispatcher(
-        RateLimiter(rate_limit_redis, limit=worker_settings.outbound_rate_limit_per_second)
+        RateLimiter(rate_limit_redis, limit=worker_settings.outbound_rate_limit_per_second),
+        dlq_redis=rate_limit_redis,
+        dlq_key=worker_settings.dlq_outbound_key,
+        dlq_max_entries=worker_settings.dlq_max_entries,
+        per_conversation_limit=worker_settings.outbound_rate_limit_per_conversation_per_minute,
+        per_conversation_window_seconds=60,
     )
     logger.info("JavobAI worker started")
 
