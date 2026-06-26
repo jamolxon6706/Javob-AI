@@ -1,7 +1,7 @@
 import logging
-import random
+import secrets
 import string
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 from jose import JWTError, jwt
 from redis.asyncio import Redis
@@ -25,7 +25,7 @@ def _refresh_key(token: str) -> str:
 
 
 async def send_otp(phone: str, redis: Redis) -> str:  # type: ignore[type-arg]
-    otp = "".join(random.choices(string.digits, k=6))
+    otp = "".join(secrets.choice(string.digits) for _ in range(6))
     await redis.setex(_otp_key(phone), settings.otp_ttl_seconds, otp)
     # In production: send via SMS gateway (Eskiz.uz)
     # For dev: log the OTP
@@ -44,7 +44,7 @@ async def verify_otp(phone: str, otp: str, redis: Redis) -> bool:  # type: ignor
 
 
 def _make_access_token(user_id: str, tenant_id: str, phone: str, role: str) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + timedelta(minutes=settings.jwt_access_expire_minutes)
     return jwt.encode(
         {
@@ -62,7 +62,7 @@ def _make_access_token(user_id: str, tenant_id: str, phone: str, role: str) -> s
 
 
 def _make_refresh_token(user_id: str, tenant_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_expire_days)
+    expire = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_expire_days)
     return jwt.encode(
         {
             "sub": user_id,

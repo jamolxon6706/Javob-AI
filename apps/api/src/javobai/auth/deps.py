@@ -20,13 +20,18 @@ async def get_current_user(
     try:
         payload = decode_token(token)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        ) from None
 
     if payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not an access token")
 
     user_id: str = payload["sub"]
-    result = await db.execute(select(User).where(User.id == user_id, User.is_active == True))  # noqa: E712
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.is_active == True)  # noqa: E712
+    )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
