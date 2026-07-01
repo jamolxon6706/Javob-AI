@@ -136,6 +136,57 @@ def test_high_threshold_above_low() -> None:
     assert HIGH_THRESHOLD > LOW_THRESHOLD
 
 
+# ── Phase 13: sentiment auto-escalation + audit trail ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_core_engine_angry_customer_escalates_before_rag() -> None:
+    """An angry-worded message should hand off immediately, without a RAG lookup."""
+    rag = _mock_rag([_faq_match(0.92)])
+    llm = _mock_llm()
+    engine = CoreEngine(_mock_embedding(), rag, llm)
+    reply = await engine.process(_make_msg(text="Bu firibgar kompaniya, pul qaytaring!"), conn=object())
+    assert reply.source == "handoff"
+    assert reply.sentiment == "angry"
+    assert reply.handoff_reason == "angry_customer"
+    rag.search.assert_not_called()  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_core_engine_neutral_message_tagged_and_routed_normally() -> None:
+    engine = CoreEngine(_mock_embedding(), _mock_rag([_faq_match(0.92)]), _mock_llm())
+    reply = await engine.process(_make_msg(), conn=object())
+    assert reply.source == "faq"
+    assert reply.sentiment == "neutral"
+
+
+@pytest.mark.asyncio
+async def test_core_engine_faq_reply_has_latency_recorded() -> None:
+    engine = CoreEngine(_mock_embedding(), _mock_rag([_faq_match(0.92)]), _mock_llm())
+    reply = await engine.process(_make_msg(), conn=object())
+    assert reply.latency_ms is not None
+    assert reply.latency_ms >= 0
+
+
+@pytest.mark.asyncio
+async def test_core_engine_llm_reply_records_model_and_latency() -> None:
+    llm = _mock_llm(answer="LLM grounded answer")
+    llm.model_name = "llama-3.3-70b-versatile"
+    engine = CoreEngine(_mock_embedding(), _mock_rag([_faq_match(0.72)]), llm)
+    reply = await engine.process(_make_msg(), conn=object())
+    assert reply.model == "llama-3.3-70b-versatile"
+    assert reply.latency_ms is not None
+    assert reply.cost_usd == 0.0
+
+
+@pytest.mark.asyncio
+async def test_core_engine_handoff_reply_has_low_confidence_reason() -> None:
+    engine = CoreEngine(_mock_embedding(), _mock_rag([_faq_match(0.50)]), _mock_llm())
+    reply = await engine.process(_make_msg(), conn=object())
+    assert reply.source == "handoff"
+    assert reply.handoff_reason == "low_confidence"
+
+
 # ── RAGService unit test (mock asyncpg) ───────────────────────────────────────
 
 

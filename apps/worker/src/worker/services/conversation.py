@@ -88,13 +88,18 @@ async def save_message(
     platform_msg_id: str | None = None,
     source: str | None = None,
     rag_score: float | None = None,
+    model: str | None = None,
+    latency_ms: int | None = None,
+    cost_usd: float = 0.0,
+    sentiment: str | None = None,
 ) -> None:
     await conn.execute(  # type: ignore[attr-defined]
         """
         INSERT INTO messages
             (id, conversation_id, tenant_id, direction, content, media,
-             platform_msg_id, source, rag_score, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, '[]', $6, $7, $8, NOW(), NOW())
+             platform_msg_id, source, rag_score, model, latency_ms, cost_usd,
+             sentiment, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, '[]', $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
         """,
         str(uuid.uuid4()),
         conversation_id,
@@ -104,6 +109,10 @@ async def save_message(
         platform_msg_id,
         source,
         rag_score,
+        model,
+        latency_ms,
+        cost_usd,
+        sentiment,
     )
 
 
@@ -120,13 +129,19 @@ async def extend_window(conn: object, conversation_id: str, hours: int = 24) -> 
     )
 
 
-async def mark_handoff(conn: object, conversation_id: str) -> None:
-    """Flag a conversation for human pickup; the bot stays silent until an operator resolves it."""
+async def mark_handoff(conn: object, conversation_id: str, reason: str | None = None) -> None:
+    """Flag a conversation for human pickup; the bot stays silent until an operator resolves it.
+
+    `reason` (Phase 13) is persisted for analytics grouping (low_confidence |
+    out_of_window | rate_limited | angry_customer). Optional so existing
+    callers/tests that don't pass it keep working unchanged.
+    """
     await conn.execute(  # type: ignore[attr-defined]
         """
         UPDATE conversations
-        SET status = 'waiting_operator', updated_at = NOW()
+        SET status = 'waiting_operator', handoff_reason = COALESCE($2, handoff_reason), updated_at = NOW()
         WHERE id = $1
         """,
         conversation_id,
+        reason,
     )

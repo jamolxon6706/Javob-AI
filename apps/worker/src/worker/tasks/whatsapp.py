@@ -18,6 +18,7 @@ from worker.services.conversation import (
     save_message,
 )
 from worker.services.dispatcher import OutboundDispatcher
+from worker.services.sentiment import detect_sentiment
 from worker.settings import worker_settings
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,7 @@ async def process_whatsapp_webhook(
                         tenant_id=unified.tenant_id,
                         direction="inbound",
                         content=unified.text,
+                        sentiment=detect_sentiment(unified.text) if unified.text.strip() else None,
                     )
                     await extend_window(
                         conn, conversation.id, hours=worker_settings.message_window_hours

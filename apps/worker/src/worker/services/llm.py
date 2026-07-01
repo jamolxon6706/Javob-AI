@@ -51,6 +51,14 @@ class LLMService:
         self._gemini_model = gemini_model
         self._timeout = timeout
 
+    @property
+    def model_name(self) -> str:
+        """Phase 13 — primary model name recorded on EngineReply for the
+        per-answer audit trail. Reports the configured router's primary
+        (Groq); the Gemini fallback is an internal retry detail, not
+        surfaced separately today — see ARCHITECTURE.md "Decisions"."""
+        return self._groq_model
+
     async def answer_grounded(
         self,
         query: str,

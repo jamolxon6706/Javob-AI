@@ -25,6 +25,7 @@ from worker.services.conversation import (
     save_message,
 )
 from worker.services.dispatcher import OutboundDispatcher
+from worker.services.sentiment import detect_sentiment
 from worker.settings import worker_settings
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ async def process_meta_message(
             tenant_id=um.tenant_id,
             direction="inbound",
             content=um.text,
+            sentiment=detect_sentiment(um.text) if um.text.strip() else None,
         )
         await extend_window(conn, conversation.id, hours=worker_settings.message_window_hours)
 

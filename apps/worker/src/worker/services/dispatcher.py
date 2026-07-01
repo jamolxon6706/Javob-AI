@@ -34,6 +34,7 @@ HandoffReason = Literal[
     "out_of_window",        # Meta platform window expired
     "rate_limited",         # per-conversation anti-runaway triggered
     "needs_template",       # reserved for Phase 9 (out-of-window templates)
+    "angry_customer",       # Phase 13 — sentiment-based auto-escalation
 ]
 
 SendFn = Callable[[str], Awaitable[object]]
@@ -102,7 +103,7 @@ class OutboundDispatcher:
                 "tenant=%s conversation=%s 24h window expired — routing to operator",
                 msg.tenant_id, conversation.id,
             )
-            await mark_handoff(conn, conversation.id)
+            await mark_handoff(conn, conversation.id, reason="out_of_window")
             await self._emit_handoff(msg, conversation, reason="out_of_window", rag_score=reply.rag_score)
             return OutboundResult(reason="window_expired", handoff="out_of_window")
 
@@ -142,12 +143,16 @@ class OutboundDispatcher:
             content=reply.text,
             source=reply.source,
             rag_score=reply.rag_score,
+            model=reply.model,
+            latency_ms=reply.latency_ms,
+            cost_usd=reply.cost_usd,
         )
 
         if reply.source == "handoff":
-            await mark_handoff(conn, conversation.id)
-            await self._emit_handoff(msg, conversation, reason="low_confidence", rag_score=reply.rag_score)
-            return OutboundResult(reason="sent", handoff="low_confidence")
+            reason: HandoffReason = "angry_customer" if reply.handoff_reason == "angry_customer" else "low_confidence"
+            await mark_handoff(conn, conversation.id, reason=reason)
+            await self._emit_handoff(msg, conversation, reason=reason, rag_score=reply.rag_score)
+            return OutboundResult(reason="sent", handoff=reason)
 
         return OutboundResult(reason="sent")
 

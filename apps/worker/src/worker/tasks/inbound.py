@@ -13,6 +13,7 @@ from worker.services.conversation import (
     save_message,
 )
 from worker.services.dispatcher import OutboundDispatcher
+from worker.services.sentiment import detect_sentiment
 from worker.settings import worker_settings
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,7 @@ async def _process(ctx: dict, msg: UnifiedMessage) -> None:  # type: ignore[type
             direction="inbound",
             content=msg.text,
             platform_msg_id=msg.platform_msg_id,
+            sentiment=detect_sentiment(msg.text) if msg.text.strip() else None,
         )
         await extend_window(conn, conversation.id, hours=worker_settings.message_window_hours)
 

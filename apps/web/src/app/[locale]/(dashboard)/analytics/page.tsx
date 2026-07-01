@@ -1,6 +1,6 @@
 import { setRequestLocale, getTranslations } from "next-intl/server";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { ComingSoonCard } from "@/components/dashboard/coming-soon-card";
+import { AnalyticsClient } from "@/components/analytics/analytics-client";
 
 export default async function AnalyticsPage({
   params,
@@ -14,7 +14,7 @@ export default async function AnalyticsPage({
   return (
     <div>
       <PageHeader title={t("title")} subtitle={t("subtitle")} />
-      <ComingSoonCard />
+      <AnalyticsClient />
     </div>
   );
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Literal, List, Dict, Any, Optional
@@ -12,6 +13,7 @@ from worker.services.llm import LLMService
 from worker.services.rag import HIGH_THRESHOLD, LOW_THRESHOLD, RAGService
 from worker.services.action_executor import ActionExecutor
 from worker.services.flow_trigger import FlowTrigger
+from worker.services.sentiment import detect_sentiment
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,16 @@ class EngineReply:
     text: str
     source: EngineSource
     rag_score: float | None
+    # Phase 13 — per-answer audit trail (ARCHITECTURE.md §Observability).
+    model: str | None = None
+    latency_ms: int | None = None
+    cost_usd: float = 0.0
+    # Tagged on the inbound message that triggered this reply, not the
+    # reply itself — carried here so the caller can persist both in one place.
+    sentiment: str | None = None
+    # Set when this reply is a handoff, so save_message/mark_handoff can
+    # record *why* without re-deriving it from source alone.
+    handoff_reason: str | None = None
 
 
 _EMPTY_REPLY = EngineReply(text="", source=None, rag_score=None)
@@ -142,6 +154,33 @@ class CoreEngine:
             # bail out here for the genuinely-empty case.
             return _EMPTY_REPLY
 
+        # Phase 13 — sentiment tagging + auto-escalation (ARCHITECTURE.md
+        # §Observability: "Sentiment tagging; auto-escalate angry customers").
+        # Runs before everything else: an angry customer shouldn't wait on a
+        # RAG/LLM round-trip the bot was never going to be trusted for anyway.
+        sentiment = detect_sentiment(msg.text) if msg.text.strip() else None
+        if sentiment == "angry":
+            logger.info("tenant=%s angry customer detected (keyword match) → handoff", msg.tenant_id)
+            return EngineReply(
+                text=_HANDOFF_REPLY_UZ,
+                source="handoff",
+                rag_score=None,
+                sentiment="angry",
+                handoff_reason="angry_customer",
+            )
+
+        reply = await self._process_inner(msg, conn)
+        if sentiment is not None and reply.sentiment is None:
+            from dataclasses import replace as _replace
+
+            reply = _replace(reply, sentiment=sentiment)
+        return reply
+
+    async def _process_inner(
+        self,
+        msg: UnifiedMessage,
+        conn: object,  # asyncpg.Connection — kept untyped to avoid hard import
+    ) -> EngineReply:
         # Flow trigger (Phase 11) — runs BEFORE RAG so a matched
         # first_contact/keyword flow short-circuits the FAQ/LLM/action
         # pipeline entirely, per ARCHITECTURE.md §Core Engine.
@@ -165,12 +204,17 @@ class CoreEngine:
         if not msg.text.strip():
             return _EMPTY_REPLY
 
+        rag_t0 = time.monotonic()
         query_emb = self._emb.embed(msg.text)
         matches = await self._rag.search(query_emb, msg.tenant_id, conn)
+        rag_latency_ms = int((time.monotonic() - rag_t0) * 1000)
 
         if not matches:
             logger.info("tenant=%s text=%r no FAQ matches → handoff", msg.tenant_id, msg.text[:60])
-            return EngineReply(text=_HANDOFF_REPLY_UZ, source="handoff", rag_score=None)
+            return EngineReply(
+                text=_HANDOFF_REPLY_UZ, source="handoff", rag_score=None,
+                latency_ms=rag_latency_ms, handoff_reason="low_confidence",
+            )
 
         top = matches[0]
         logger.info(
@@ -182,14 +226,29 @@ class CoreEngine:
         )
 
         if top.score >= HIGH_THRESHOLD:
-            return EngineReply(text=top.answer, source="faq", rag_score=top.score)
+            return EngineReply(
+                text=top.answer, source="faq", rag_score=top.score, latency_ms=rag_latency_ms,
+            )
 
         if top.score >= LOW_THRESHOLD:
+            llm_t0 = time.monotonic()
             answer = await self._llm.answer_grounded(msg.text, matches)
+            llm_latency_ms = int((time.monotonic() - llm_t0) * 1000)
+            total_latency_ms = rag_latency_ms + llm_latency_ms
             if answer is None:
                 logger.info("tenant=%s LLM guardrail/failure → handoff", msg.tenant_id)
-                return EngineReply(text=_HANDOFF_REPLY_UZ, source="handoff", rag_score=top.score)
-            return EngineReply(text=answer, source="llm", rag_score=top.score)
+                return EngineReply(
+                    text=_HANDOFF_REPLY_UZ, source="handoff", rag_score=top.score,
+                    latency_ms=total_latency_ms, handoff_reason="low_confidence",
+                )
+            return EngineReply(
+                text=answer, source="llm", rag_score=top.score,
+                model=self._llm.model_name, latency_ms=total_latency_ms,
+                # Groq's llama tier used here is free; cost tracking is wired
+                # so a future paid escalation model just needs to report a
+                # non-zero figure here — see ARCHITECTURE.md "Decisions".
+                cost_usd=0.0,
+            )
 
         # Low confidence: try agentic action
         # BUG FIX: uuid.UUID(msg.tenant_id) used to be called unguarded —
@@ -201,7 +260,10 @@ class CoreEngine:
             tenant_id_uuid = uuid.UUID(msg.tenant_id)
         except ValueError:
             logger.error("tenant=%s is not a valid UUID — skipping action lookup", msg.tenant_id)
-            return EngineReply(text=_HANDOFF_REPLY_UZ, source="handoff", rag_score=top.score)
+            return EngineReply(
+                text=_HANDOFF_REPLY_UZ, source="handoff", rag_score=top.score,
+                latency_ms=rag_latency_ms, handoff_reason="low_confidence",
+            )
         actions = await self._fetch_actions(conn, tenant_id_uuid)
         if actions:
             action = self._match_action(msg.text, actions)
@@ -213,11 +275,13 @@ class CoreEngine:
                 )
                 params = self._extract_parameters(msg.text, action["name"])
                 executor = ActionExecutor()
+                action_t0 = time.monotonic()
                 try:
                     result = await executor.execute(action, params)
                 except Exception as e:
                     logger.error("Action execution failed: %s", e)
                     result = {"status": "error", "error": str(e), "outputs": {}}
+                action_latency_ms = int((time.monotonic() - action_t0) * 1000)
                 if result.get("status") == "success":
                     # Try to get a user-friendly message from outputs
                     output_msg = result.get("outputs", {}).get("message")
@@ -226,7 +290,10 @@ class CoreEngine:
                         output_msg = str(result.get("outputs", ""))
                     if not output_msg:
                         output_msg = "Amaliyot bajarildi."
-                    return EngineReply(text=output_msg, source="action", rag_score=top.score)
+                    return EngineReply(
+                        text=output_msg, source="action", rag_score=top.score,
+                        latency_ms=rag_latency_ms + action_latency_ms,
+                    )
                 else:
                     # action failed, fallback to handoff
                     logger.info(
@@ -236,4 +303,7 @@ class CoreEngine:
                         result.get("error"),
                     )
         # If no action matched or action failed, handoff
-        return EngineReply(text=_HANDOFF_REPLY_UZ, source="handoff", rag_score=top.score)
+        return EngineReply(
+            text=_HANDOFF_REPLY_UZ, source="handoff", rag_score=top.score,
+            latency_ms=rag_latency_ms, handoff_reason="low_confidence",
+        )

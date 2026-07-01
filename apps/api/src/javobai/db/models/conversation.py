@@ -29,5 +29,8 @@ class Conversation(Base, TimestampMixin):
     )
     # Bot silenced until this time (after operator reply)
     bot_silenced_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Phase 13 — why the conversation was last handed off (analytics grouping):
+    # low_confidence | out_of_window | rate_limited | angry_customer
+    handoff_reason: Mapped[str | None] = mapped_column(String(50))
 
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation")  # type: ignore[name-defined]  # noqa: F821

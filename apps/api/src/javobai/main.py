@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from javobai.ai_settings.router import router as ai_settings_router
+from javobai.analytics.router import router as analytics_router
 from javobai.auth.router import router as auth_router
 from javobai.channels.router import router as channels_router
 from javobai.config import settings
@@ -66,6 +67,7 @@ app.include_router(flows_router)
 app.include_router(actions_router)
 app.include_router(growth_router)
 app.include_router(growth_public_router)
+app.include_router(analytics_router)
 if settings.environment != "production":
     app.include_router(internal_router)
 

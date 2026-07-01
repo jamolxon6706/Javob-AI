@@ -6,6 +6,7 @@ from .channel import Channel
 from .contact import Contact
 from .conversation import Conversation
 from .drip import DripEnrollment, DripSequence, DripStep
+from .eval import EvalCase, EvalResult, EvalRun
 from .faq import FAQ
 from .flow import Flow
 from .message import Message
@@ -41,4 +42,7 @@ __all__ = [
     "Flow",
     "TenantAction",
     "ActionLog",
+    "EvalCase",
+    "EvalRun",
+    "EvalResult",
 ]
