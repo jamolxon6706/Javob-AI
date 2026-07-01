@@ -30,6 +30,21 @@ class WorkerSettings(BaseSettings):
     # Per-tenant handoff events go to: f"handoff:{tenant_id}"
     handoff_event_channel_prefix: str = "handoff"
 
+
+    # Phase 9 — WhatsApp Cloud API
+    whatsapp_app_secret: str = ""
+    whatsapp_verify_token: str = "javobai_wa_verify"
+    whatsapp_access_token: str = ""
+    whatsapp_phone_number_id: str = ""
+    fernet_key: str = "change_me"
+
+    # Phase 10 — Meta (IG + FB)
+    meta_app_secret: str = ""
+    meta_verify_token: str = "javobai_meta_verify"
+
+    # Phase 11 — Agentic actions
+    action_timeout_seconds: float = 10.0
+
     @property
     def asyncpg_url(self) -> str:
         """Plain asyncpg DSN (strips SQLAlchemy dialect prefix if present)."""
@@ -37,3 +52,4 @@ class WorkerSettings(BaseSettings):
 
 
 worker_settings = WorkerSettings()
+settings = worker_settings  # alias for adapters

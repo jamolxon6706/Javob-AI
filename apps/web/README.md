@@ -1,36 +1,68 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# @javobai/web — Dashboard
 
-## Getting Started
+The tenant-facing dashboard for JavobAI. Next.js 16 (App Router, Turbopack),
+TypeScript strict, Tailwind 4, `next-intl` (uz default + ru).
 
-First, run the development server:
+## Getting started
+
+From the repo root (this app depends on `@javobai/ui` and
+`@javobai/shared-types` via the pnpm workspace):
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+cp ../../.env.example ../../.env   # then fill in real values
+pnpm --filter web dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). You'll be redirected to
+`/login` unless you have a valid session cookie from the API.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The dev server expects `apps/api` running on `http://localhost:8000` (or
+whatever `INTERNAL_API_BASE_URL` points to).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Architecture
 
-## Learn More
+See [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md#phase-6--dashboard-foundation)
+for the full write-up (Phase 8's inbox realtime transport is documented at
+[`#phase-8--operator-inbox`](../../docs/ARCHITECTURE.md#phase-8--operator-inbox)).
+Short version:
 
-To learn more about Next.js, take a look at the following resources:
+- **Auth is cookie-based and BFF-proxied.** The browser never holds a JWT or
+  calls FastAPI directly for REST calls. `src/app/api/auth/*` and
+  `src/app/api/proxy/*` are Next.js Route Handlers that forward to FastAPI
+  server-side and relay `Set-Cookie` back to the browser.
+- **One narrow exception:** the Phase 8 inbox opens a websocket
+  (`src/lib/ws/use-inbox-socket.ts`) straight from the browser to the API,
+  because a persistent connection can't be proxied through a Route Handler.
+  It carries a one-time ticket (minted via the normal proxy), never the JWT.
+- **`src/proxy.ts`** (Next.js 16's renamed `middleware.ts`) handles locale
+  routing (`next-intl`) and redirects unauthenticated requests away from
+  `/dashboard/*`. It only *decodes* JWT claims (no signature check) to avoid
+  an unnecessary redirect when a silent refresh would do — the actual
+  verification happens once, in FastAPI.
+- **i18n**: `uz` is the default locale with no URL prefix
+  (`/dashboard`); `ru` is prefixed (`/ru/dashboard`). Message bundles live in
+  `messages/uz.json` / `messages/ru.json`.
+- **Login flow** (`src/components/auth/`) is split into a router-agnostic
+  state machine hook (`use-login-flow.ts`) and presentational steps
+  (`PhoneStep`, `OtpStep`), so the flow itself is unit-testable without an
+  App Router test harness.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm dev         # next dev (Turbopack)
+pnpm build       # next build
+pnpm typecheck   # tsc --noEmit
+pnpm test        # vitest run
+```
 
-## Deploy on Vercel
+## Environment variables
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Variable | Purpose |
+|---|---|
+| `INTERNAL_API_BASE_URL` | Server-only FastAPI origin the BFF route handlers call. **Not** prefixed `NEXT_PUBLIC_` — the browser must never reach FastAPI directly for REST calls. |
+| `NEXT_PUBLIC_WS_URL` | Phase 8 only. Where the browser opens the inbox websocket directly (see above). Same-origin `/ws/inbox` path in production (nginx proxies it to the api container), `ws://localhost:8000/ws/inbox` in dev. |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See the repo-root `.env.example` for the full list (shared with `apps/api`).
+

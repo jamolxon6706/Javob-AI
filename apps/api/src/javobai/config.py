@@ -26,6 +26,30 @@ class Settings(BaseSettings):
     # Encryption
     fernet_key: str = "change_me"
 
+    # AI / LLM (Phase 8 — operator copilot). Mirrors apps/worker's WorkerSettings
+    # so both processes read the same env vars without sharing a package.
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    llm_timeout_seconds: float = 15.0
+
+    # Phase 8 — one-time websocket auth ticket TTL (seconds).
+    ws_ticket_ttl_seconds: int = 60
+
+
+    # WhatsApp Cloud API (Phase 9)
+    whatsapp_verify_token: str = "javobai_wa_verify"
+    whatsapp_app_secret: str = ""
+    whatsapp_phone_number_id: str = ""
+    whatsapp_access_token: str = ""
+
+    # Meta (Instagram + Facebook) (Phase 10)
+    meta_verify_token: str = "javobai_meta_verify"
+    meta_app_secret: str = ""
+
+    # Agentic (Phase 11)
+    action_timeout_seconds: float = 10.0
+
     # App
     environment: str = "development"
     api_base_url: str = "http://localhost:8000"

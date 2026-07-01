@@ -69,6 +69,15 @@ services:
     build:
       context: ../apps/web
       dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* vars are inlined into the client bundle at `next
+        # build` time, not read at container runtime — so env_file below
+        # doesn't reach the browser. Run compose from a shell that has
+        # sourced ../.env (e.g. `set -a; source ../.env; set +a; docker
+        # compose -f infra/docker-compose.yml up --build`) so this
+        # substitution picks up your real value; otherwise it falls back to
+        # the same dev default as apps/web/src/lib/config.ts.
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000/ws/inbox}
     restart: unless-stopped
     env_file:
       - ../.env

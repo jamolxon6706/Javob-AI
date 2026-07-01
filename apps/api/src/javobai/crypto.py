@@ -20,3 +20,16 @@ def decrypt_dict(token: str) -> dict[str, Any]:
         return json.loads(raw)  # type: ignore[no-any-return]
     except (InvalidToken, ValueError) as exc:
         raise ValueError("Cannot decrypt credentials — invalid key or tampered data") from exc
+
+
+def encrypt(value: str) -> str:
+    """Encrypt a plain string."""
+    return _get_fernet().encrypt(value.encode()).decode()
+
+
+def decrypt(token: str) -> str:
+    """Decrypt a string token."""
+    try:
+        return _get_fernet().decrypt(token.encode()).decode()
+    except (InvalidToken, ValueError) as exc:
+        raise ValueError("Cannot decrypt — invalid key or tampered data") from exc

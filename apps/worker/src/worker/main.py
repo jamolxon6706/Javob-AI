@@ -12,6 +12,8 @@ from worker.services.rag import RAGService
 from worker.settings import worker_settings
 from worker.tasks.embed import embed_faq_job, probe_embed_job
 from worker.tasks.inbound import process_inbound_message
+from worker.tasks.whatsapp import process_whatsapp_webhook
+from worker.tasks.meta import process_meta_message
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +76,13 @@ async def shutdown(ctx: dict) -> None:  # type: ignore[type-arg]
 
 
 class WorkerConfig:
-    functions = [process_inbound_message, embed_faq_job, probe_embed_job]
+    functions = [
+        process_inbound_message,
+        embed_faq_job,
+        probe_embed_job,
+        process_whatsapp_webhook,
+        process_meta_message,
+    ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(worker_settings.redis_url)

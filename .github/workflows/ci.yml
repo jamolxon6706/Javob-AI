@@ -65,6 +65,10 @@ jobs:
         working-directory: packages/shared-types
         run: pnpm typecheck
 
+      - name: Typecheck (ui)
+        working-directory: packages/ui
+        run: pnpm typecheck
+
       - name: Typecheck (web)
         working-directory: apps/web
         run: pnpm typecheck

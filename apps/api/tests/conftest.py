@@ -116,3 +116,48 @@ async def client(
         yield c
 
     app.dependency_overrides.clear()
+
+
+async def _register_and_get_token(c: AsyncClient, phone: str) -> str:
+    r = await c.post("/auth/request-otp", json={"phone": phone})
+    otp = r.json()["otp"]
+    r = await c.post("/auth/verify", json={"phone": phone, "otp": otp})
+    return r.json()["access_token"]
+
+
+@pytest_asyncio.fixture
+async def auth_client(
+    db: AsyncSession, mock_redis: MagicMock, mock_arq: AsyncMock
+) -> AsyncGenerator[AsyncClient, None]:
+    """Pre-authenticated client for tenant A (+998907000001)."""
+    from javobai.main import app
+
+    app.dependency_overrides[get_db] = lambda: db  # type: ignore[arg-type]
+    app.dependency_overrides[get_redis] = lambda: mock_redis
+    app.state.arq = mock_arq
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        token = await _register_and_get_token(c, "+998907000001")
+        c.headers.update({"Authorization": f"Bearer {token}"})
+        yield c
+
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def second_auth_client(
+    db: AsyncSession, mock_redis: MagicMock, mock_arq: AsyncMock
+) -> AsyncGenerator[AsyncClient, None]:
+    """Pre-authenticated client for tenant B (+998907000002)."""
+    from javobai.main import app
+
+    app.dependency_overrides[get_db] = lambda: db  # type: ignore[arg-type]
+    app.dependency_overrides[get_redis] = lambda: mock_redis
+    app.state.arq = mock_arq
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        token = await _register_and_get_token(c, "+998907000002")
+        c.headers.update({"Authorization": f"Bearer {token}"})
+        yield c
+
+    app.dependency_overrides.clear()

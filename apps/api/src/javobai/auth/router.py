@@ -1,3 +1,5 @@
+import json
+import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -124,3 +126,30 @@ async def me(current_user: CurrentUser) -> MeOut:
         name=current_user.name,
         role=current_user.role,
     )
+
+
+class WsTicketOut(BaseModel):
+    ticket: str
+
+
+@router.post("/ws-ticket", response_model=WsTicketOut)
+async def create_ws_ticket(
+    current_user: CurrentUser,
+    redis: Annotated[Redis, Depends(get_redis)],  # type: ignore[type-arg]
+) -> WsTicketOut:
+    """
+    Phase 8 — mint a one-time, short-lived ticket the browser exchanges for a
+    websocket connection at /ws/inbox. See javobai/ws/router.py for the full
+    rationale (this endpoint exists because /ws/inbox can't reuse the HttpOnly
+    cookie the way regular REST calls do through the Next.js BFF proxy).
+    """
+    ticket = secrets.token_urlsafe(32)
+    payload = json.dumps(
+        {
+            "user_id": current_user.id,
+            "tenant_id": current_user.tenant_id,
+            "name": current_user.name or current_user.phone,
+        }
+    )
+    await redis.setex(f"ws_ticket:{ticket}", settings.ws_ticket_ttl_seconds, payload)
+    return WsTicketOut(ticket=ticket)
